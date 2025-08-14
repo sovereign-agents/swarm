@@ -1,3 +1,6 @@
+.env.production
+.env
+
 # Python
 __pycache__/
 *.py[cod]

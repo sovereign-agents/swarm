@@ -27,6 +27,48 @@ logging.basicConfig(
 )
 logger = logging.getLogger("nostr_swarm")
 
+# =====================================================================
+# CONSTANTS - Replacing magic numbers for better maintainability
+# =====================================================================
+
+# Time-related constants (in seconds)
+VERY_RECENT_MESSAGE_AGE = 30  # Messages < 30 seconds old
+RECENT_MESSAGE_AGE = 120  # Messages < 2 minutes old
+DEFAULT_STALL_TIMEOUT = 120  # 2 minutes before considering debate stalled
+DEFAULT_LLM_TIMEOUT = 60  # 60 seconds per LLM call
+RELAY_FETCH_TIMEOUT = 5  # 5 seconds for relay operations
+EVENT_FETCH_TIMEOUT = 10  # 10 seconds for fetching events
+RETRY_CHECK_INTERVAL = 5  # 5 seconds between retry checks
+SHORT_DELAY = 0.5  # 500ms delay between operations
+STANDARD_DELAY = 1.5  # 1.5 second delay
+LONG_DELAY = 3.0  # 3 second delay
+SYNTHESIS_TIMEOUT = 60.0  # 60 seconds for supervisor synthesis
+
+# Message count limits
+DEFAULT_MAX_CONTEXT_EVENTS = 15  # Default events for conversation context
+RECENT_MESSAGES_FOR_SCORING = 10  # Last N messages for scoring
+MENTION_PARTICIPANTS_LIMIT = 5  # Max participants to mention in reply
+THREAD_SUMMARY_PARTICIPANTS = 5  # Max participants to show in summary
+
+# Token and content length limits
+DEFAULT_MAX_TOKENS = 1000  # Allow longer responses
+MIN_CONTENT_LENGTH = 200  # Minimum interesting content length
+MEDIUM_CONTENT_LENGTH = 500  # Medium content length threshold
+ERROR_MESSAGE_PREVIEW_LENGTH = 500  # How much of error message to show
+RESPONSE_PREVIEW_LENGTH = 1000  # Preview length for responses
+DEBUG_CONTENT_PREVIEW = 30  # Debug log content preview
+AUTHOR_ID_PREFIX_LENGTH = 6  # Length of author ID prefix (e.g., "Agent_abc123")
+
+# Reply thresholds
+MIN_REPLIES_BEFORE_SUMMARY = 5  # Minimum replies for quality
+MAX_REPLIES_BEFORE_SUMMARY = 20  # Maximum replies before summary
+
+# Network limits
+MAX_HTTP_CONNECTIONS = 10  # Maximum concurrent HTTP connections
+
+# HTTP status codes
+HTTP_OK = 200  # Successful HTTP response
+
 
 class AgentRole(Enum):
     """Predefined agent roles"""
@@ -54,8 +96,8 @@ class ModelConfig:
     model_name: str = "qwen3:14b"
     base_url: str = "http://localhost:11434"
     temperature: float = 0.8
-    max_tokens: int = 1000  # Allow much longer responses
-    timeout: int = 60  # 60 seconds per LLM call (was 1800 which is excessive)
+    max_tokens: int = DEFAULT_MAX_TOKENS  # Allow much longer responses
+    timeout: int = DEFAULT_LLM_TIMEOUT  # Timeout per LLM call
     
     def __post_init__(self):
         if self.temperature < 0 or self.temperature > 2:
@@ -67,14 +109,14 @@ class ModelConfig:
 @dataclass
 class SwarmConfig:
     """Enhanced swarm configuration for debate mode"""
-    max_replies_before_summary: int = 20  # Configurable threshold
-    min_replies_before_summary: int = 5   # Minimum for quality
+    max_replies_before_summary: int = MAX_REPLIES_BEFORE_SUMMARY  # Configurable threshold
+    min_replies_before_summary: int = MIN_REPLIES_BEFORE_SUMMARY   # Minimum for quality
     enable_external_participants: bool = True
     debate_intensity: float = 0.7  # 0-1 scale for how critical agents are
     allow_parallel_replies: bool = True
     reply_delay_seconds: float = 2.0
     supervisor_trigger_on_stall: bool = True  # Trigger if conversation stalls
-    stall_timeout_seconds: int = 120  # Consider stalled after 2 minutes (was 60s)
+    stall_timeout_seconds: int = DEFAULT_STALL_TIMEOUT  # Consider stalled after 2 minutes
 
 
 @dataclass
@@ -123,7 +165,7 @@ class OllamaClient:
         if self._client is None:
             self._client = httpx.AsyncClient(
                 timeout=httpx.Timeout(self.config.timeout),
-                limits=httpx.Limits(max_connections=10)
+                limits=httpx.Limits(max_connections=MAX_HTTP_CONNECTIONS)
             )
         return self._client
     
@@ -168,11 +210,11 @@ class OllamaClient:
                 logger.debug(f"  Response status: {response.status_code}")
                 
                 # Check for HTTP errors
-                if response.status_code != 200:
+                if response.status_code != HTTP_OK:
                     error_text = response.text
                     logger.error(f"LLM API returned error {response.status_code}:")
-                    logger.error(f"  Response body: {error_text[:500]}")
-                    raise ValueError(f"HTTP {response.status_code}: {error_text[:200]}")
+                    logger.error(f"  Response body: {error_text[:ERROR_MESSAGE_PREVIEW_LENGTH]}")
+                    raise ValueError(f"HTTP {response.status_code}: {error_text[:MIN_CONTENT_LENGTH]}")
                 
                 response.raise_for_status()
                 result = response.json()
@@ -193,7 +235,7 @@ class OllamaClient:
                     # Log the actual response for debugging
                     logger.error(f"Unexpected response format from Ollama:")
                     logger.error(f"  Response keys: {list(result.keys())}")
-                    logger.error(f"  Full response: {json.dumps(result, indent=2)[:1000]}")
+                    logger.error(f"  Full response: {json.dumps(result, indent=2)[:RESPONSE_PREVIEW_LENGTH]}")
                     raise ValueError(f"Invalid response format: expected 'message.content' or 'response', got keys: {list(result.keys())}")
                     
             except httpx.TimeoutException as e:
@@ -213,7 +255,7 @@ class OllamaClient:
                 last_error = e
                 logger.error(f"LLM generation attempt {attempt + 1} JSON DECODE ERROR:")
                 logger.error(f"  Could not parse response as JSON")
-                logger.error(f"  Raw response: {response.text[:500] if 'response' in locals() else 'No response'}")
+                logger.error(f"  Raw response: {response.text[:ERROR_MESSAGE_PREVIEW_LENGTH] if 'response' in locals() else 'No response'}")
                 logger.error(f"  Error: {e}")
                 
             except Exception as e:
@@ -279,7 +321,7 @@ class ReplyStrategy:
         candidates = []
         now = datetime.now(timezone.utc)
         
-        for event in thread_events[-10:]:  # Consider last 10 messages
+        for event in thread_events[-RECENT_MESSAGES_FOR_SCORING:]:  # Consider last 10 messages
             author = event.author().to_hex()
             
             # Skip our own messages if we just replied
@@ -306,16 +348,16 @@ class ReplyStrategy:
             
             # Prefer recent messages (freshness)
             event_age = now.timestamp() - event.created_at().as_secs()
-            if event_age < 30:  # Very recent (< 30 seconds)
+            if event_age < VERY_RECENT_MESSAGE_AGE:  # Very recent
                 score += 0.3
-            elif event_age < 120:  # Recent (< 2 minutes)
+            elif event_age < RECENT_MESSAGE_AGE:  # Recent
                 score += 0.2
             
             # Prefer longer, more substantive messages (more to debate)
             content_length = len(event.content())
-            if content_length > 500:
+            if content_length > MEDIUM_CONTENT_LENGTH:
                 score += 0.2
-            elif content_length > 200:
+            elif content_length > MIN_CONTENT_LENGTH:
                 score += 0.1
             
             # Look for debate-worthy content (questions, claims, opinions)
@@ -391,6 +433,55 @@ class NostrAgent:
         await self.llm_client.close()
         logger.info(f"Agent {self.config.name} disconnected")
     
+    def _build_conversation_context(self, thread_events: List[Event], 
+                                   max_events: int = DEFAULT_MAX_CONTEXT_EVENTS) -> List[str]:
+        """Build conversation history from thread events.
+        
+        Args:
+            thread_events: List of events in the thread
+            max_events: Maximum number of events to include
+            
+        Returns:
+            List of formatted conversation entries
+        """
+        conversation = []
+        # Take last N events for context
+        events_to_process = thread_events if len(thread_events) <= max_events else thread_events[-max_events:]
+        
+        for event in events_to_process:
+            author = event.author().to_hex()
+            content = event.content()  # Don't truncate - show full messages
+            
+            speaker = "Me" if author == self.pubkey else f"Agent_{author[:AUTHOR_ID_PREFIX_LENGTH]}"
+            conversation.append(f"[{speaker}]: {content}")
+        
+        return conversation
+    
+    def _build_base_system_prompt(self) -> str:
+        """Build the base system prompt with agent details.
+        
+        Returns:
+            Base system prompt string with agent identity and characteristics
+        """
+        return f"""You are {self.config.name}, a {self.config.role.value} AI agent.
+
+Role: {self.config.system_prompt}
+Traits: {', '.join(self.config.personality_traits) if self.config.personality_traits else 'None specified'}
+Knowledge: {', '.join(self.config.knowledge_base) if self.config.knowledge_base else 'General knowledge'}"""
+
+    def _get_critical_instructions(self) -> str:
+        """Get critical instructions for clean responses.
+        
+        Returns:
+            String with critical instructions to prevent meta-commentary
+        """
+        return """CRITICAL INSTRUCTIONS:
+- Start your response DIRECTLY with your substantive answer
+- Do NOT include any thinking, reasoning, or meta-commentary
+- Do NOT say things like "Let me think", "Wait", "Oh", "Actually", etc.
+- Do NOT mention "the user" or describe what you're doing
+- Just provide your direct response to the topic"""
+
     def _clean_response(self, response: str) -> str:
         """Remove ALL thinking tags and their content - preserve everything else"""
         if not response:
@@ -425,28 +516,16 @@ class NostrAgent:
                                thread_events: List[Event]) -> Optional[str]:
         """Generate response considering full thread context"""
         
-        # Build conversation history
-        conversation = []
-        for event in thread_events:
-            author = event.author().to_hex()
-            content = event.content()  # Don't truncate - show full messages
-            
-            speaker = "Me" if author == self.pubkey else f"Agent_{author[:6]}"
-            conversation.append(f"[{speaker}]: {content}")
+        # Build conversation history using helper method
+        conversation = self._build_conversation_context(thread_events)
         
-        # Build prompts
-        system_prompt = f"""You are {self.config.name}, a {self.config.role.value} AI agent participating in a discussion.
+        # Build prompts using helper methods
+        base_prompt = self._build_base_system_prompt()
+        critical_instructions = self._get_critical_instructions()
+        
+        system_prompt = f"""{base_prompt}
 
-Role: {self.config.system_prompt}
-Traits: {', '.join(self.config.personality_traits)}
-Knowledge: {', '.join(self.config.knowledge_base)}
-
-CRITICAL INSTRUCTIONS:
-- Start your response DIRECTLY with your substantive answer
-- Do NOT include any thinking, reasoning, or meta-commentary
-- Do NOT say things like "Let me think", "Wait", "Oh", "Actually", etc.
-- Do NOT mention "the user" or describe what you're doing
-- Just provide your direct response to the topic
+{critical_instructions}
 
 Requirements:
 1. Consider ALL previous messages in the thread
@@ -478,7 +557,7 @@ Provide your {self.config.role.value} perspective. Start with a complete answer 
             if not response:
                 logger.warning(f"{self.config.name} generated empty response after cleaning")
                 if raw_response:
-                    logger.warning(f"Raw response was: {raw_response[:500]}...")
+                    logger.warning(f"Raw response was: {raw_response[:ERROR_MESSAGE_PREVIEW_LENGTH]}...")
                 return None
             
             # Don't truncate - post the full LLM response
@@ -511,7 +590,7 @@ Provide your {self.config.role.value} perspective. Start with a complete answer 
             logger.warning(f"{self.config.name} found no suitable debate target")
             return None
         
-        logger.debug(f"{self.config.name} selected target: {target_event.content()[:30]}...")
+        logger.debug(f"{self.config.name} selected target: {target_event.content()[:DEBUG_CONTENT_PREVIEW]}...")
         
         # Generate debate-focused response
         logger.debug(f"{self.config.name} generating debate response...")
@@ -526,7 +605,7 @@ Provide your {self.config.role.value} perspective. Start with a complete answer 
             logger.warning(f"{self.config.name} failed to generate response text")
             return None
         
-        logger.debug(f"{self.config.name} generated response: {response_text[:50]}...")
+        logger.debug(f"{self.config.name} generated response: {response_text[:DEBUG_CONTENT_PREVIEW*2]}...")
         
         # Post the reply
         return await self._post_reply(root_event, target_event, response_text, thread_events)
@@ -537,27 +616,20 @@ Provide your {self.config.role.value} perspective. Start with a complete answer 
                                       debate_intensity: float) -> Optional[str]:
         """Generate a debate-focused response to a specific message"""
         
-        # Build conversation history
-        conversation = []
-        for event in thread_events[-15:]:  # Last 15 messages for context
-            author = event.author().to_hex()
-            content = event.content()
-            
-            speaker = "Me" if author == self.pubkey else f"Agent_{author[:6]}"
-            conversation.append(f"[{speaker}]: {content}")
+        # Build conversation history using helper method (limit to most recent)
+        conversation = self._build_conversation_context(thread_events, max_events=DEFAULT_MAX_CONTEXT_EVENTS)
         
         # Get target author name
         target_author = target_event.author().to_hex()
-        target_name = "Me" if target_author == self.pubkey else f"Agent_{target_author[:6]}"
+        target_name = "Me" if target_author == self.pubkey else f"Agent_{target_author[:AUTHOR_ID_PREFIX_LENGTH]}"
         
         # Build debate directive based on role and stance
         debate_directive = self._get_debate_directive(debate_intensity)
         
-        # Build prompts
-        system_prompt = f"""You are {self.config.name}, a {self.config.role.value} AI agent in a debate.
-
-Role: {self.config.system_prompt}
-Traits: {', '.join(self.config.personality_traits)}
+        # Build prompts using helper method
+        base_prompt = self._build_base_system_prompt()
+        
+        system_prompt = f"""{base_prompt}
 Stance: {self.config.debate_stance}
 
 DEBATE INSTRUCTIONS:
@@ -645,12 +717,12 @@ Provide your {self.config.role.value} perspective on {target_name}'s message. Be
         
         # Add mentions for active participants
         participants = set()
-        for event in thread_events[-10:]:
+        for event in thread_events[-RECENT_MESSAGES_FOR_SCORING:]:
             author = event.author().to_hex()
             if author != self.pubkey and author != target_event.author().to_hex():
                 participants.add(author)
         
-        for participant in list(participants)[:5]:  # Limit mentions
+        for participant in list(participants)[:MENTION_PARTICIPANTS_LIMIT]:  # Limit mentions
             tags.append(Tag.parse(["p", participant]))
         
         # Create and send
@@ -664,7 +736,7 @@ Provide your {self.config.role.value} perspective on {target_name}'s message. Be
             logger.info(f"✅ {self.config.name} posted debate reply: {event_id}")
             
             # Quick verification
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(SHORT_DELAY)
             return reply_event
         else:
             logger.error(f"❌ {self.config.name} failed to post debate reply")
@@ -709,14 +781,14 @@ Be comprehensive but concise. Focus on insights and conclusions."""
         thread_summary = []
         for i, event in enumerate(thread_events):
             author = event.author().to_hex()
-            author_name = f"Participant_{author[:6]}"
+            author_name = f"Participant_{author[:AUTHOR_ID_PREFIX_LENGTH]}"
             content = event.content()
             
             if i == 0:
                 thread_summary.append(f"ORIGINAL TOPIC: {content}")
             else:
                 # Truncate very long messages in summary
-                if len(content) > 500:
+                if len(content) > MEDIUM_CONTENT_LENGTH:
                     content = content[:497] + "..."
                 thread_summary.append(f"[{author_name}]: {content}")
         
@@ -856,7 +928,7 @@ Focus on substance over process. What did we learn? What conclusions can we draw
         logger.info(f"{self.config.name} posting: {response_text[:50]}...")
         
         # CRITICAL: Race condition guard - re-fetch thread before deciding parent
-        await asyncio.sleep(0.5)  # Short delay to catch concurrent posts
+        await asyncio.sleep(SHORT_DELAY)  # Short delay to catch concurrent posts
         
         # Re-fetch to get latest state
         from nostr_sdk import Filter, EventId, Timestamp
@@ -912,7 +984,7 @@ Focus on substance over process. What did we learn? What conclusions can we draw
         
         # Add mentions for recent participants
         participants = set()
-        for event in thread_events[-5:]:
+        for event in thread_events[-MENTION_PARTICIPANTS_LIMIT:]:
             author = event.author().to_hex()
             if author != self.pubkey and author != reply_to_event.author().to_hex():
                 participants.add(author)
@@ -936,7 +1008,7 @@ Focus on substance over process. What did we learn? What conclusions can we draw
             
             # Exponential backoff retry
             max_retries = 3
-            retry_delays = [0.5, 1.5, 3.0]  # Increasing delays
+            retry_delays = [SHORT_DELAY, STANDARD_DELAY, LONG_DELAY]  # Increasing delays
             
             verified = False
             for attempt, delay in enumerate(zip(range(max_retries), retry_delays)):
@@ -944,7 +1016,7 @@ Focus on substance over process. What did we learn? What conclusions can we draw
                 
                 try:
                     event_filter = Filter().ids([reply_event.id()]).limit(1)
-                    events = await self.client.fetch_events(event_filter, timedelta(seconds=10))
+                    events = await self.client.fetch_events(event_filter, timedelta(seconds=EVENT_FETCH_TIMEOUT))
                 
                     if events:
                         events_list = events.to_vec()
@@ -1068,8 +1140,8 @@ class NostrSwarm:
         
         try:
             # Fetch both root and potential thread events
-            root_events = await client.fetch_events(root_filter, timedelta(seconds=5))
-            thread_events = await client.fetch_events(thread_filter, timedelta(seconds=5))
+            root_events = await client.fetch_events(root_filter, timedelta(seconds=RELAY_FETCH_TIMEOUT))
+            thread_events = await client.fetch_events(thread_filter, timedelta(seconds=RELAY_FETCH_TIMEOUT))
             
             result = []
             
@@ -1198,7 +1270,7 @@ class NostrSwarm:
             """Continuously monitor thread for synthesis trigger"""
             nonlocal synthesis_triggered, last_activity
             while self._running and not synthesis_triggered:
-                await asyncio.sleep(5)  # Check every 5 seconds
+                await asyncio.sleep(RETRY_CHECK_INTERVAL)  # Check periodically
                 
                 # Fetch current thread
                 thread_events = await self.fetch_thread_events(root_id, root_event.created_at().as_secs())
@@ -1286,7 +1358,7 @@ class NostrSwarm:
                 
                 if replies_this_round == 0:
                     logger.info("No agents replied this round")
-                    await asyncio.sleep(5)  # Wait before retrying
+                    await asyncio.sleep(RETRY_CHECK_INTERVAL)  # Wait before retrying
         
         finally:
             # Cancel monitor
@@ -1311,7 +1383,7 @@ class NostrSwarm:
                 # Synthesis can take time with large models, but 60s should be enough
                 synthesis = await asyncio.wait_for(
                     self.supervisor_agent.create_synthesis(root_event, thread_events),
-                    timeout=60.0  # 60 second timeout for synthesis
+                    timeout=SYNTHESIS_TIMEOUT  # Timeout for synthesis
                 )
                 logger.info(f"   Synthesis created successfully: {len(synthesis) if synthesis else 0} chars")
             except asyncio.TimeoutError:
@@ -1336,7 +1408,7 @@ class NostrSwarm:
         """Ensure root event exists on relay"""
         try:
             root_filter = Filter().ids([event.id()]).limit(1)
-            events = await self.agents[0].client.fetch_events(root_filter, timedelta(seconds=5))
+            events = await self.agents[0].client.fetch_events(root_filter, timedelta(seconds=RELAY_FETCH_TIMEOUT))
             
             events_list = events.to_vec() if events else []
             if not events_list:
@@ -1363,7 +1435,7 @@ class NostrSwarm:
         
         try:
             root_filter = Filter().ids([event.id()]).limit(1)
-            events = await self.agents[0].client.fetch_events(root_filter, timedelta(seconds=5))
+            events = await self.agents[0].client.fetch_events(root_filter, timedelta(seconds=RELAY_FETCH_TIMEOUT))
             
             events_list = events.to_vec() if events else []
             if not events_list:
@@ -1387,7 +1459,7 @@ class NostrSwarm:
             
             if round_num < max_rounds:
                 # Wait between rounds
-                await asyncio.sleep(5)
+                await asyncio.sleep(RETRY_CHECK_INTERVAL)
         
         logger.info(f"Completed {max_rounds} rounds for message")
 
