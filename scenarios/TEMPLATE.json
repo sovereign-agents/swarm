@@ -1,0 +1,34 @@
+{
+  "_comment": "Minimal scenario template - most config is in swarm.config",
+  
+  "name": "Scenario Name (displayed at start)",
+  "description": "Brief description (displayed at start)",
+  "topic": "The actual question or topic that will be debated (REQUIRED)",
+  
+  "_comment_model": "Optional: Override default model for all agents",
+  "model_name": "deepseek-r1:14b",
+  
+  "agent_requirements": [
+    {
+      "role": "analytical | critical | creative | technical | visionary",
+      "name": "AgentName",
+      "system_prompt": "Full system prompt that will be sent to the LLM. This is the most important field.",
+      "_comment_model": "Optional: Override model for this specific agent only",
+      "model_name": "qwen3:14b"
+    },
+    {
+      "role": "supervisor",
+      "name": "SupervisorName",
+      "system_prompt": "You are a debate moderator. Summarize key points when threshold is reached.",
+      "is_supervisor": true
+    }
+  ],
+  
+  "timeout_seconds": 600,
+  
+  "_notes": {
+    "model_priority": "1. Agent model_name, 2. Scenario model_name, 3. swarm.config default_model",
+    "config_profiles": "Use --config flag: default, fast, or extended",
+    "all_fields_optional": "Only 'name', 'topic', and 'agent_requirements' are required"
+  }
+}

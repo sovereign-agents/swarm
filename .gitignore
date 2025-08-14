@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+python/
+# Logs
+*.log
+*.log.*
+
+# Databases
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Process files
+*.pid
+
+# Test outputs
+test_output/
+test_key.hex
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+build/
+dist/
+*.egg-info/
+
+# Nostr specific
+keys/*.json
+config.env
+nostr-sdk-ffi
+jumble
