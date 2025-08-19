@@ -12,10 +12,10 @@ import asyncio
 import logging
 import argparse
 from pathlib import Path
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Dict, Any, List
 
-from nostr_sdk import Keys, EventBuilder
+from nostr_sdk import Keys, EventBuilder, Event
 from nostr_swarm import (
     create_swarm,
     SwarmConfig,
@@ -45,6 +45,8 @@ class JsonScenarioRunner:
         self.swarm_config_data = None
         self.model_config_data = None
         self.default_model = None
+        self.conversation_memory = []  # Store all conversation messages
+        self.agent_names = {}  # Map pubkey to agent name
         self.load_swarm_config()
     
     def load_swarm_config(self):
@@ -244,6 +246,113 @@ class JsonScenarioRunner:
             
         return agents
     
+    def save_conversation_memory(self):
+        """Save conversation to a memory file."""
+        # Create memory directory if it doesn't exist
+        memory_dir = Path("conversation_memory")
+        memory_dir.mkdir(exist_ok=True)
+        
+        # Generate filename with timestamp and scenario name
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        scenario_name = self.json_path.stem
+        memory_file = memory_dir / f"{scenario_name}_{timestamp}.md"
+        
+        # Build memory content
+        content = []
+        content.append(f"# Conversation Memory: {self.scenario['name']}\n")
+        content.append(f"**Date**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        content.append(f"**Topic**: {self.scenario['topic']}\n")
+        content.append(f"**Config Profile**: {self.config_profile}\n")
+        content.append(f"**Total Messages**: {len(self.conversation_memory)}\n")
+        content.append("\n---\n\n")
+        
+        # Add agent list
+        content.append("## Participants\n\n")
+        for pubkey, name in self.agent_names.items():
+            content.append(f"- **{name}** ({pubkey[:8]}...)\n")
+        content.append("\n---\n\n")
+        
+        # Add conversation
+        content.append("## Conversation\n\n")
+        for i, msg in enumerate(self.conversation_memory, 1):
+            content.append(f"### Message {i}\n")
+            content.append(f"**Author**: {msg['author']}\n")
+            content.append(f"**Time**: {msg['timestamp']}\n")
+            if msg.get('reply_to'):
+                content.append(f"**Reply to**: Message {msg['reply_to']}\n")
+            content.append(f"\n{msg['content']}\n\n")
+            content.append("---\n\n")
+        
+        # Write to file
+        with open(memory_file, 'w', encoding='utf-8') as f:
+            f.write(''.join(content))
+        
+        logger.info(f"\nConversation memory saved to: {memory_file}")
+        return memory_file
+    
+    async def capture_debate_messages(self):
+        """Capture messages from the relay during the debate."""
+        from nostr_sdk import Client, Filter, Kind, RelayUrl, NostrSigner, Timestamp
+        
+        # Create client for monitoring
+        keys = Keys.generate()
+        signer = NostrSigner.keys(keys)
+        client = Client(signer)
+        
+        relay = RelayUrl.parse(self.relay_url)
+        await client.add_relay(relay)
+        await client.connect()
+        
+        # Track messages
+        start_time = Timestamp.now()
+        message_index = {}  # Map event ID to message number
+        
+        while self.swarm and hasattr(self.swarm, 'running'):
+            # Fetch recent messages
+            filter = Filter().kind(Kind(1)).since(start_time)
+            timeout = timedelta(seconds=2)
+            
+            try:
+                events = await client.fetch_events(filter, timeout)
+                event_list = list(events.to_vec())
+                
+                for event in event_list:
+                    event_id = event.id().to_hex()
+                    if event_id not in message_index:
+                        # New message
+                        author_pubkey = event.author().to_hex()
+                        author_name = self.agent_names.get(author_pubkey, f"Unknown_{author_pubkey[:8]}")
+                        
+                        # Check if it's a reply
+                        reply_to = None
+                        tags = event.tags()
+                        for tag in tags.to_vec():
+                            tag_vec = tag.as_vec()
+                            if len(tag_vec) >= 4 and tag_vec[0] == "e" and tag_vec[3] == "reply":
+                                parent_id = tag_vec[1]
+                                reply_to = message_index.get(parent_id)
+                        
+                        # Add to memory
+                        msg_num = len(self.conversation_memory) + 1
+                        message_index[event_id] = msg_num
+                        
+                        self.conversation_memory.append({
+                            'number': msg_num,
+                            'author': author_name,
+                            'timestamp': datetime.now().strftime('%H:%M:%S'),
+                            'content': event.content(),
+                            'reply_to': reply_to,
+                            'event_id': event_id
+                        })
+                
+            except Exception as e:
+                # Continue monitoring even if fetch fails
+                pass
+            
+            await asyncio.sleep(2)
+        
+        await client.disconnect()
+    
     async def run(self) -> int:
         """Run the scenario and return number of messages generated."""
         # Load scenario
@@ -262,7 +371,10 @@ class JsonScenarioRunner:
         logger.info(f"\nAdding {len(agent_configs)} agents...")
         
         for agent_config in agent_configs:
-            self.swarm.add_agent(agent_config)
+            agent = self.swarm.add_agent(agent_config)
+            # Store agent name mapping for conversation memory
+            if agent:
+                self.agent_names[agent.pubkey] = agent_config.name
             role_type = "Supervisor" if agent_config.role == AgentRole.SUPERVISOR else "Agent"
             logger.info(f"  Added {role_type}: {agent_config.name}")
         
@@ -280,6 +392,9 @@ class JsonScenarioRunner:
         logger.info(f"Timeout: {self.scenario.get('timeout_seconds', 600)} seconds")
         logger.info("-" * 60)
         
+        # Start message capture task
+        capture_task = asyncio.create_task(self.capture_debate_messages())
+        
         try:
             # Run the scenario
             timeout = self.scenario.get('timeout_seconds', 600)
@@ -288,7 +403,7 @@ class JsonScenarioRunner:
                 timeout=float(timeout)
             )
             
-            logger.info(f"\n✅ Scenario completed successfully!")
+            logger.info(f"\n[SUCCESS] Scenario completed successfully!")
             if result:
                 logger.info(f"Total messages: {len(result)}")
                 return len(result)
@@ -297,16 +412,28 @@ class JsonScenarioRunner:
                 return 18  # Will be updated by verify_results
             
         except asyncio.TimeoutError:
-            logger.info(f"\n⏱️ Scenario reached time limit")
+            logger.info(f"\n[TIMEOUT] Scenario reached time limit")
             return -1
             
         except Exception as e:
-            logger.error(f"\n❌ Error during scenario: {e}")
+            logger.error(f"\n[ERROR] Error during scenario: {e}")
             import traceback
             traceback.print_exc()
             return -2
             
         finally:
+            # Stop capture task
+            self.swarm.running = False
+            capture_task.cancel()
+            try:
+                await capture_task
+            except asyncio.CancelledError:
+                pass
+            
+            # Save conversation memory
+            if self.conversation_memory:
+                self.save_conversation_memory()
+            
             # Cleanup
             await self.swarm.stop()
             logger.info("\nSwarm stopped and cleaned up")
@@ -376,11 +503,11 @@ async def main():
     # Report results
     logger.info("\n" + "=" * 60)
     if message_count > 0:
-        logger.info(f"✅ SUCCESS: Generated {message_count} messages")
+        logger.info(f"[SUCCESS] Generated {message_count} messages")
     elif message_count == -1:
-        logger.info("⏱️ Scenario completed (timeout)")
+        logger.info("[TIMEOUT] Scenario completed")
     else:
-        logger.info("❌ Scenario failed")
+        logger.info("[FAILED] Scenario failed")
     logger.info("=" * 60)
     
     return 0 if message_count > 0 else 1

@@ -733,13 +733,13 @@ Provide your {self.config.role.value} perspective on {target_name}'s message. Be
         
         if output.success:
             event_id = reply_event.id().to_hex()
-            logger.info(f"✅ {self.config.name} posted debate reply: {event_id}")
+            logger.info(f"[SUCCESS] {self.config.name} posted debate reply: {event_id}")
             
             # Quick verification
             await asyncio.sleep(SHORT_DELAY)
             return reply_event
         else:
-            logger.error(f"❌ {self.config.name} failed to post debate reply")
+            logger.error(f"[ERROR] {self.config.name} failed to post debate reply")
             return None
     
     async def create_synthesis(self, root_event: Event,
@@ -877,7 +877,7 @@ Focus on substance over process. What did we learn? What conclusions can we draw
         root_id = root_event.id().to_hex()
         
         # Add a header to the synthesis
-        final_message = f"🎯 SYNTHESIS by {self.config.name} (Supervisor)\n\n{synthesis}"
+        final_message = f"SYNTHESIS by {self.config.name} (Supervisor)\n\n{synthesis}"
         
         logger.info(f"Supervisor {self.config.name} posting synthesis...")
         
@@ -904,10 +904,10 @@ Focus on substance over process. What did we learn? What conclusions can we draw
         
         if output.success:
             event_id = synthesis_event.id().to_hex()
-            logger.info(f"✅ Supervisor posted synthesis: {event_id}")
+            logger.info(f"[SUCCESS] Supervisor posted synthesis: {event_id}")
             return synthesis_event
         else:
-            logger.error(f"❌ Supervisor failed to post synthesis")
+            logger.error(f"[ERROR] Supervisor failed to post synthesis")
             return None
     
     async def reply_to_thread(self, root_event: Event, 
@@ -1000,11 +1000,11 @@ Focus on substance over process. What did we learn? What conclusions can we draw
         
         if output.success:
             event_id = reply_event.id().to_hex()
-            logger.info(f"✅ {self.config.name} posted event ID: {event_id}")
+            logger.info(f"[SUCCESS] {self.config.name} posted event ID: {event_id}")
             logger.info(f"   Replying to parent: {reply_to_id}")
             
             # CRITICAL: Verify with exponential backoff for relay lag
-            logger.info(f"🔍 Verifying event {event_id[:16]}... is on relay...")
+            logger.info(f"[VERIFY] Checking event {event_id[:16]}... is on relay...")
             
             # Exponential backoff retry
             max_retries = 3
@@ -1021,7 +1021,7 @@ Focus on substance over process. What did we learn? What conclusions can we draw
                     if events:
                         events_list = events.to_vec()
                         if events_list and events_list[0].id().to_hex() == event_id:
-                            logger.info(f"✅ VERIFIED: Event found on relay (attempt {attempt+1})")
+                            logger.info(f"[VERIFIED] Event found on relay (attempt {attempt+1})")
                             verified = True
                             break
                 except Exception as e:
@@ -1033,11 +1033,11 @@ Focus on substance over process. What did we learn? What conclusions can we draw
             if verified:
                 return reply_event
             else:
-                logger.warning(f"⚠️ Could not verify event after {max_retries} attempts")
+                logger.warning(f"[WARNING] Could not verify event after {max_retries} attempts")
                 # Return anyway - relay might have it but be slow to confirm
                 return reply_event
         else:
-            logger.error(f"❌ {self.config.name} failed to post")
+            logger.error(f"[ERROR] {self.config.name} failed to post")
             return None
 
 
@@ -1251,7 +1251,7 @@ class NostrSwarm:
         root_id = root_event.id().to_hex()
         
         # Log the root message
-        logger.info(f"📌 Starting supervised debate on: {root_event.content()[:50]}...")
+        logger.info(f"[START] Starting supervised debate on: {root_event.content()[:50]}...")
         logger.info(f"   Root ID: {root_id}")
         logger.info(f"   Threshold: {self.config.max_replies_before_summary} replies")
         logger.info(f"   Number of debate agents: {len(self.debate_agents)}")
@@ -1281,14 +1281,14 @@ class NostrSwarm:
                 reply_count = len([e for e in thread_events if e.id().to_hex() != root_id])
                 
                 if reply_count >= self.config.max_replies_before_summary:
-                    logger.info(f"\n🎯 Monitor: Threshold reached! {reply_count} replies")
+                    logger.info(f"\n[THRESHOLD] Monitor: Threshold reached! {reply_count} replies")
                     synthesis_triggered = True
                     break
                 
                 # Check for stall
                 now = datetime.now(timezone.utc)
                 if (now - last_activity).total_seconds() > self.config.stall_timeout_seconds:
-                    logger.info(f"\n⏱️ Monitor: Debate stalled after {reply_count} replies")
+                    logger.info(f"\n[STALLED] Monitor: Debate stalled after {reply_count} replies")
                     if reply_count >= self.config.min_replies_before_summary:
                         synthesis_triggered = True
                     break
@@ -1347,14 +1347,14 @@ class NostrSwarm:
                             thread_events = await self.fetch_thread_events(root_id, root_event.created_at().as_secs())
                             current_count = len([e for e in thread_events if e.id().to_hex() != root_id])
                             
-                            logger.info(f"   ✅ {agent.config.name} replied [{current_count}/{self.config.max_replies_before_summary}]")
+                            logger.info(f"   [SUCCESS] {agent.config.name} replied [{current_count}/{self.config.max_replies_before_summary}]")
                             
                             # Natural pacing
                             await asyncio.sleep(self.config.reply_delay_seconds)
                         else:
-                            logger.info(f"   ⏭️ {agent.config.name} chose not to reply")
+                            logger.info(f"   [SKIP] {agent.config.name} chose not to reply")
                     except Exception as e:
-                        logger.error(f"   ❌ {agent.config.name} failed to reply: {e}")
+                        logger.error(f"   [ERROR] {agent.config.name} failed to reply: {e}")
                 
                 if replies_this_round == 0:
                     logger.info("No agents replied this round")
@@ -1370,7 +1370,7 @@ class NostrSwarm:
         
         # Trigger supervisor synthesis if threshold reached
         if synthesis_triggered and self.supervisor_agent:
-            logger.info(f"\n🎯 Triggering supervisor synthesis...")
+            logger.info(f"\n[SYNTHESIS] Triggering supervisor synthesis...")
             
             # Get final thread state
             thread_events = await self.fetch_thread_events(root_id, root_event.created_at().as_secs())
@@ -1387,16 +1387,16 @@ class NostrSwarm:
                 )
                 logger.info(f"   Synthesis created successfully: {len(synthesis) if synthesis else 0} chars")
             except asyncio.TimeoutError:
-                logger.error("   ❌ Supervisor synthesis timed out after 60s")
+                logger.error("   [ERROR] Supervisor synthesis timed out after 60s")
                 synthesis = None
             except Exception as e:
-                logger.error(f"   ❌ Supervisor synthesis failed: {e}")
+                logger.error(f"   [ERROR] Supervisor synthesis failed: {e}")
                 synthesis = None
             
             if synthesis:
                 # Post synthesis
                 await self.supervisor_agent.post_synthesis(root_event, thread_events, synthesis)
-                logger.info("✅ Supervisor synthesis posted!")
+                logger.info("[SUCCESS] Supervisor synthesis posted!")
             else:
                 logger.warning("Supervisor failed to generate synthesis")
         else:
@@ -1415,7 +1415,7 @@ class NostrSwarm:
                 logger.info("Posting root event to relay...")
                 output = await self.agents[0].client.send_event(event)
                 if output.success:
-                    logger.info(f"✅ Posted root event")
+                    logger.info(f"[SUCCESS] Posted root event")
                     await asyncio.sleep(1)
         except Exception as e:
             logger.error(f"Error checking root event: {e}")
@@ -1426,11 +1426,11 @@ class NostrSwarm:
         
         # Log the root message event ID
         content = event.content()
-        logger.info(f"📌 ROOT EVENT ID: {root_id}")
+        logger.info(f"[ROOT] Event ID: {root_id}")
         logger.info(f"Processing message: {content[:50]}...")
         
         # First, verify the root event exists on the relay
-        logger.info(f"🔍 Verifying root event {root_id[:16]}... is on relay...")
+        logger.info(f"[VERIFY] Checking root event {root_id[:16]}... is on relay...")
         from nostr_sdk import Filter
         
         try:
@@ -1439,18 +1439,18 @@ class NostrSwarm:
             
             events_list = events.to_vec() if events else []
             if not events_list:
-                logger.warning(f"⚠️ Root event {root_id[:16]}... not found on relay - posting it now")
+                logger.warning(f"[WARNING] Root event {root_id[:16]}... not found on relay - posting it now")
                 
                 # Post the root event if it's not on the relay
                 output = await self.agents[0].client.send_event(event)
                 if output.success:
-                    logger.info(f"✅ Posted root event to relay: {root_id}")
+                    logger.info(f"[SUCCESS] Posted root event to relay: {root_id}")
                     await asyncio.sleep(1)  # Wait for propagation
                 else:
-                    logger.error(f"❌ Failed to post root event to relay")
+                    logger.error(f"[ERROR] Failed to post root event to relay")
                     return
             else:
-                logger.info(f"✅ Root event {root_id[:16]}... exists on relay")
+                logger.info(f"[SUCCESS] Root event {root_id[:16]}... exists on relay")
         except Exception as e:
             logger.error(f"Error checking root event: {e}")
         

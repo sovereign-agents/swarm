@@ -46,6 +46,21 @@ build/
 dist/
 *.egg-info/
 
+# Backup and temporary files
+*.bak
+*.backup
+*.old
+*.tmp
+*.temp
+old_*
+
+# Docker data
+data/
+logs/
+
+# Conversation memory files
+conversation_memory/
+
 # Nostr specific
 keys/*.json
 config.env
