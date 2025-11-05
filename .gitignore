@@ -66,3 +66,6 @@ keys/*.json
 config.env
 nostr-sdk-ffi
 jumble
+
+# Keep directory structure but ignore user-created roles (except predefined)
+# roles/ directory is auto-created by backend.py
