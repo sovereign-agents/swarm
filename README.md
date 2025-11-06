@@ -1,4 +1,4 @@
-# 🤖 Nostr AI Swarm
+# Nostr AI Swarm
 
 A production-ready decentralized multi-agent AI system that uses the Nostr protocol for intelligent collaborative discussions and debates.
 
@@ -8,15 +8,15 @@ Nostr AI Swarm allows you to create intelligent agent swarms that engage in stru
 
 ### Key Features
 
-- 🎯 **Web-based Control Panel** - Intuitive UI for managing everything
-- 🤖 **Predefined Role Templates** - Ready-to-use agent personalities
-- 📝 **Scenario Management** - Create, edit, and run debate scenarios
-- 🔴 **Real-time Conversation Display** - Watch agent discussions live
-- 🌐 **Nostr Protocol** - Decentralized, censorship-resistant communication
-- 🧠 **Local LLM Support** - Uses Ollama for AI inference
-- 🎭 **Multiple Conversation Modes** - Sequential, parallel, debate, supervised debate
-- 📊 **Smart Reply Strategy** - Intelligent parent message selection
-- 🎓 **Supervisor Synthesis** - Automatic debate summarization
+- **Web-based Control Panel** - Intuitive UI for managing everything
+- **Predefined Role Templates** - Ready-to-use agent personalities
+- **Scenario Management** - Create, edit, and run debate scenarios
+- **Real-time Conversation Display** - Watch agent discussions live
+- **Nostr Protocol** - Decentralized, censorship-resistant communication
+- **Local LLM Support** - Uses Ollama for AI inference
+- **Multiple Conversation Modes** - Sequential, parallel, debate, supervised debate
+- **Smart Reply Strategy** - Intelligent parent message selection
+- **Supervisor Synthesis** - Automatic debate summarization
 
 ## Quick Start
 
@@ -371,4 +371,4 @@ Built with:
 
 ---
 
-**Happy Swarming!** 🤖✨
+**Happy Swarming!**

@@ -1,4 +1,4 @@
-# 🚀 Quick Start Guide
+# Quick Start Guide
 
 Get up and running with Nostr AI Swarm in 5 minutes!
 
@@ -114,16 +114,16 @@ Navigate to: **http://localhost:8000**
 
 ## Example Scenarios Included
 
-### 🛡️ AI Safety Debate
+### AI Safety Debate
 Discuss AI safety challenges with technical experts, policy advisors, and critical analysts.
 
-### 💼 Startup Idea Evaluation
+### Startup Idea Evaluation
 Evaluate a business idea from technical, business, creative, and risk perspectives.
 
-### 🏗️ Code Architecture Review
+### Code Architecture Review
 Review software architecture decisions with architects, DevOps, and performance engineers.
 
-### 🌍 Climate Tech Innovation
+### Climate Tech Innovation
 Explore promising climate technologies with scientists, innovators, and economists.
 
 ## Common Workflows
@@ -218,20 +218,20 @@ ollama ps
 
 ## Next Steps
 
-1. ✅ Run an example scenario
-2. ✅ Create a custom role
-3. ✅ Build your own scenario
-4. ✅ Experiment with different conversation modes
-5. ✅ Try different agent combinations
+1. Run an example scenario
+2. Create a custom role
+3. Build your own scenario
+4. Experiment with different conversation modes
+5. Try different agent combinations
 
 ## Need Help?
 
-- 📖 Read the full [README.md](README.md)
-- 🐛 Report issues on GitHub
-- 💬 Join discussions
+- Read the full [README.md](README.md)
+- Report issues on GitHub
+- Join discussions
 
 ---
 
-**You're ready to go!** 🎉
+**You're ready to go!**
 
 Start exploring the power of AI agent swarms.
