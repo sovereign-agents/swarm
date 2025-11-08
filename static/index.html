@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nostr AI Swarm - Control Panel</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Nostr AI Swarm</h1>
+            <p class="subtitle">Decentralized Multi-Agent System</p>
+        </header>
+
+        <nav class="tabs">
+            <button class="tab-btn active" data-tab="swarm">Swarm Control</button>
+            <button class="tab-btn" data-tab="scenarios">Scenarios</button>
+            <button class="tab-btn" data-tab="roles">Roles</button>
+            <button class="tab-btn" data-tab="conversation">Live Conversation</button>
+        </nav>
+
+        <!-- Swarm Control Tab -->
+        <div id="swarm" class="tab-content active">
+            <div class="panel">
+                <h2>Swarm Status</h2>
+                <div id="swarm-status" class="status-panel">
+                    <div class="status-item">
+                        <span class="label">Status:</span>
+                        <span id="status-text" class="status-badge idle">Idle</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="label">Scenario:</span>
+                        <span id="status-scenario">None</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="label">Agents:</span>
+                        <span id="status-agents">0</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="label">Messages:</span>
+                        <span id="status-messages">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2>Start Swarm</h2>
+                <form id="start-swarm-form">
+                    <div class="form-group">
+                        <label for="scenario-select">Select Scenario</label>
+                        <select id="scenario-select" required>
+                            <option value="">Loading scenarios...</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="relay-urls">Relay URLs (comma-separated)</label>
+                        <input type="text" id="relay-urls" value="ws://localhost:7447" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="ollama-url">Ollama Base URL</label>
+                        <input type="text" id="ollama-url" value="http://localhost:11434" required>
+                    </div>
+
+                    <div class="button-group">
+                        <button type="submit" class="btn btn-primary" id="start-btn">
+                            Start Swarm
+                        </button>
+                        <button type="button" class="btn btn-danger" id="stop-btn" disabled>
+                            Stop Swarm
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Scenarios Tab -->
+        <div id="scenarios" class="tab-content">
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>Scenarios</h2>
+                    <button class="btn btn-primary" id="new-scenario-btn">+ New Scenario</button>
+                </div>
+
+                <div id="scenarios-list" class="items-list">
+                    <p class="loading">Loading scenarios...</p>
+                </div>
+            </div>
+
+            <!-- Scenario Editor Modal -->
+            <div id="scenario-modal" class="modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3 id="scenario-modal-title">New Scenario</h3>
+                        <button class="close-btn">&times;</button>
+                    </div>
+                    <form id="scenario-form">
+                        <input type="hidden" id="scenario-id">
+
+                        <div class="form-group">
+                            <label for="scenario-name">Name *</label>
+                            <input type="text" id="scenario-name" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="scenario-description">Description</label>
+                            <textarea id="scenario-description" rows="3"></textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="scenario-topic">Topic / Question *</label>
+                            <textarea id="scenario-topic" rows="3" required placeholder="What should the agents discuss?"></textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="scenario-mode">Conversation Mode</label>
+                            <select id="scenario-mode">
+                                <option value="supervised_debate">Supervised Debate</option>
+                                <option value="debate">Free Debate</option>
+                                <option value="sequential">Sequential</option>
+                                <option value="parallel">Parallel</option>
+                            </select>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="scenario-max-replies">Max Replies Before Summary</label>
+                                <input type="number" id="scenario-max-replies" value="20" min="5">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="scenario-timeout">Timeout (seconds)</label>
+                                <input type="number" id="scenario-timeout" value="600" min="60">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Agents</label>
+                            <div id="scenario-agents-list"></div>
+                            <button type="button" class="btn btn-secondary" id="add-agent-btn">+ Add Agent</button>
+                        </div>
+
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary cancel-btn">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Save Scenario</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Roles Tab -->
+        <div id="roles" class="tab-content">
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>Role Templates</h2>
+                    <button class="btn btn-primary" id="new-role-btn">+ New Role</button>
+                </div>
+
+                <div id="roles-list" class="items-list">
+                    <p class="loading">Loading roles...</p>
+                </div>
+            </div>
+
+            <!-- Role Editor Modal -->
+            <div id="role-modal" class="modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3 id="role-modal-title">New Role</h3>
+                        <button class="close-btn">&times;</button>
+                    </div>
+                    <form id="role-form">
+                        <input type="hidden" id="role-id">
+
+                        <div class="form-group">
+                            <label for="role-name">Name *</label>
+                            <input type="text" id="role-name" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="role-type">Role Type *</label>
+                            <select id="role-type" required>
+                                <option value="technical">Technical Expert</option>
+                                <option value="creative">Creative Thinker</option>
+                                <option value="critical">Critical Analyst</option>
+                                <option value="practical">Practical Advisor</option>
+                                <option value="visionary">Visionary Strategist</option>
+                                <option value="analytical">Analytical Researcher</option>
+                                <option value="supervisor">Supervisor/Moderator</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="role-description">Description</label>
+                            <textarea id="role-description" rows="2"></textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="role-prompt">System Prompt *</label>
+                            <textarea id="role-prompt" rows="6" required placeholder="You are an AI agent..."></textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="role-stance">Debate Stance</label>
+                            <select id="role-stance">
+                                <option value="balanced">Balanced</option>
+                                <option value="supportive">Supportive</option>
+                                <option value="challenging">Challenging</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="role-traits">Personality Traits (comma-separated)</label>
+                            <input type="text" id="role-traits" placeholder="analytical, thorough, objective">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="role-knowledge">Knowledge Base (comma-separated)</label>
+                            <input type="text" id="role-knowledge" placeholder="software engineering, architecture, best practices">
+                        </div>
+
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary cancel-btn">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Save Role</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Conversation Tab -->
+        <div id="conversation" class="tab-content">
+            <div class="panel">
+                <h2>Live Conversation</h2>
+                <div id="conversation-container">
+                    <div id="conversation-messages" class="messages-container">
+                        <p class="no-messages">No active conversation. Start a swarm to see messages.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
